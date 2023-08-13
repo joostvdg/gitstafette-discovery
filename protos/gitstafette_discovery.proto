@@ -1,0 +1,76 @@
+syntax = "proto3";
+package gitstafette_discovery;
+
+service Discovery {
+  rpc RegisterHub(RegisterHubRequest) returns (RegisterHubResponse) {}
+  rpc RegisterServer(RegisterServerRequest) returns (RegisterServerResponse) {}
+
+  rpc GetHubs(GetHubsRequest) returns (GetHubsResponse) {}
+  rpc GetServers(GetServersRequest) returns (GetServersResponse) {}
+}
+
+message RegisterResponse {
+  bool success = 1;
+  string message = 2;
+  string error = 3;
+  string error_code = 4;
+}
+
+message RegisterHubRequest {
+  GitstafetteHub hub = 1;
+}
+
+message RegisterHubResponse {
+  RegisterResponse  response = 1;
+}
+
+message RegisterServerRequest {
+  GitstafetteServer server = 1;
+}
+
+message RegisterServerResponse {
+  RegisterResponse response = 1;
+}
+
+message GetHubsRequest {
+  string client_id = 1;
+  string name = 2;
+  string host = 3;
+  string port = 4;
+}
+
+message GetHubsResponse {
+  repeated GitstafetteHub Hubs = 1;
+}
+
+message GetServersRequest {
+  string client_id = 1;
+  string name = 2;
+  string host = 3;
+  string port = 4;
+}
+
+message GetServersResponse {
+  repeated GitstafetteServer servers = 1;
+}
+
+
+message GitstafetteHub {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string host = 4;
+  string port = 5;
+  string repositories = 6;
+  string relay_host = 7;
+  string relay_port = 8;
+}
+
+message GitstafetteServer {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string host = 4;
+  string port = 5;
+  string repositories = 6;
+}
