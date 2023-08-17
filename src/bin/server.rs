@@ -1,5 +1,7 @@
 use tonic::{transport::Server, Request, Response, Status};
 
+use clap::{Parser};
+
 use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,RegisterHubResponse, RegisterServerRequest, RegisterServerResponse, GetServersRequest, GetServersResponse, GitstafetteHub, GitstafetteServer, RegisterResponse,
    discovery_server::{Discovery, DiscoveryServer}};
 
@@ -11,15 +13,32 @@ pub mod gitstafette_discovery {
   tonic::include_proto!("gitstafette_discovery");
 }
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// Gitstatfette Discovery Server Listen Address
+    #[arg(short, long, default_value = "[::1]")]
+    listener_address: String,
+
+    /// Gitstatfette Discovery Server Port
+    #[arg(short, long, default_value = "50051")]
+    port: String,
+
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let address = "[::1]:50051".parse().unwrap();
+    let cli = Cli::parse();
+    let address = format!("{}:{}", cli.listener_address, cli.port);
     let discovery_service = DiscoveryServer::new(DiscoveryService{store: InMemoryStore::new()});
+
+    // create SocketAddr from address
+    let socket_address = address.parse().unwrap();
 
     println!("Gistafette Discovery server listening on {}", address);
     Server::builder()
       .add_service(discovery_service)
-      .serve(address)
+      .serve(socket_address)
       .await?;
 
     Ok(())
