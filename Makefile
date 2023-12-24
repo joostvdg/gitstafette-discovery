@@ -1,3 +1,6 @@
+run:
+	@echo "Running local"
+	cargo run --bin server
 
 get-servers-local:
 	@echo "Getting servers from local"
@@ -45,3 +48,8 @@ dpush:
 		--tag ghcr.io/joostvdg/gitstafette-discovery:$(VERSION)-debian \
 		--build-arg BUILDKIT_INLINE_BUILDINFO_ATTRS=1 \
 		--provenance=false --sbom=false --push
+
+
+.PHONY:
+drun-alpine:
+	docker run --rm -it -p 50051:50051 ghcr.io/joostvdg/gitstafette-discovery:$(VERSION)-alpine

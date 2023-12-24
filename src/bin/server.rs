@@ -5,13 +5,18 @@ use clap::{Parser};
 use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,RegisterHubResponse, RegisterServerRequest, RegisterServerResponse, GetServersRequest, GetServersResponse, GitstafetteHub, GitstafetteServer, RegisterResponse,
    discovery_server::{Discovery, DiscoveryServer}};
 
+use gitstafette_info::{GetInfoRequest, GetInfoResponse, InstanceType, info_server::{Info, InfoServer}};
+
 use crate::store::inmemory::*;
 
-pub mod store;
+mod store;
 
-pub mod gitstafette_discovery {
-  tonic::include_proto!("gitstafette_discovery");
-}
+// https://timvw.be/2022/04/28/notes-on-using-grpc-with-rust-and-tonic/
+#[path = "gitstafette_discovery.rs"]
+pub mod gitstafette_discovery;
+
+#[path = "gitstafette_info.rs"]
+pub mod gitstafette_info;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -31,16 +36,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let address = format!("{}:{}", cli.listener_address, cli.port);
     let discovery_service = DiscoveryServer::new(DiscoveryService{store: InMemoryStore::new()});
+    let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
+
+    health_reporter.set_serving::<DiscoveryServer<DiscoveryService>>()
+        .await;
 
     // create SocketAddr from address
     let socket_address = address.parse().unwrap();
 
     println!("Gistafette Discovery server listening on {}", address);
     Server::builder()
+      .add_service(health_service)
       .add_service(discovery_service)
       .serve(socket_address)
       .await?;
-
     Ok(())
 }
 
@@ -154,4 +163,34 @@ impl Discovery for DiscoveryService {
       hubs,
     }));
   }
+}
+
+
+#[derive(Debug, Default)]
+pub struct InfoService {
+
+}
+
+#[tonic::async_trait]
+impl Info for InfoService {
+
+    async fn get_info(&self, request: Request<GetInfoRequest>) -> Result<Response<GetInfoResponse>, Status> {
+      println!("Got a request: {:?}", request);
+
+      // collect Hostname if its set, else use localhost
+      let hostnameEnv = std::env::var("HOSTNAME");
+      let hostname = hostnameEnv.unwrap_or_else(|_| "localhost".to_string());
+
+      let response = GetInfoResponse {
+        alive: true,
+        instance_type: InstanceType::Discovery.into(),
+        version: "0.1.0".to_string(),
+        name: "Gitstafette Discovery".to_string(),
+        hostname: hostname.to_string(),
+        ip: "".to_string(),
+        port: "50051".to_string(),
+      };
+
+      return Ok(Response::new(response));
+    }
 }

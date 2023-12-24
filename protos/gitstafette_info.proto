@@ -1,0 +1,30 @@
+syntax = "proto3";
+package gitstafette_info;
+
+service Info {
+    rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {}
+}
+
+message GetInfoRequest {
+  string client_id = 1;
+  string client_endpoint = 2;
+}
+
+message GetInfoResponse {
+  bool alive = 1;
+  InstanceType instance_type = 2;
+  string version = 3;
+  string name = 4;
+  string hostname = 5;
+  string ip = 6;
+  string port = 7;
+}
+
+enum InstanceType {
+  RELAY = 0;
+  SERVER = 1;
+  CLIENT = 2;
+  HUB = 3;
+  DISCOVERY = 4;
+  EXPLORER = 5;
+}

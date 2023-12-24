@@ -1,0 +1,155 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/instance: gsf-discovery-server
+    app.kubernetes.io/name: gsf-discovery-server
+    app.kubernetes.io/version: 0.1.0
+  name: gsf-discovery-server
+  namespace: test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: gsf-discovery-server
+      app.kubernetes.io/name: gsf-discovery-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: gsf-discovery-server
+        app.kubernetes.io/name: gsf-discovery-server
+        app.kubernetes.io/version: 0.1.0
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      containers:
+        - args:
+            - --listener-address
+            - 0.0.0.0
+            - --port
+            - "50051"
+          image:  ghcr.io/joostvdg/gitstafette-discovery:0.3.0-alpine
+          imagePullPolicy: IfNotPresent
+          name: gsf-discovery-server
+          ports:
+            - containerPort: 50051
+              name: grpc
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            grpc:
+              port: 50051
+              service: ""
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          livenessProbe:
+            failureThreshold: 3
+            grpc:
+              port: 50051
+              service: ""
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          startupProbe:
+            failureThreshold: 3
+            grpc:
+              port: 50051
+              service: ""
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 32Mi
+            requests:
+              cpu: 250m
+              memory: 16Mi
+          securityContext: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/instance: gsf-discovery-server
+    app.kubernetes.io/name: gsf-discovery-server
+    app.kubernetes.io/version: 0.3.0
+  name: gsf-discovery-server
+  namespace: test
+spec:
+  ports:
+    - name: grpc
+      port: 50051
+      protocol: TCP
+      targetPort: 50051
+  selector:
+    app.kubernetes.io/instance: gsf-discovery-server
+    app.kubernetes.io/name: gsf-discovery-server
+  type: ClusterIP
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: discovery-test
+  namespace: test
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "gsf-discovery-test.home.lab"
+    - hosts:
+        - gsf-discovery-test.home.lab
+      port:
+        name: tls-passthrough
+        number: 10443
+        protocol: TLS
+      tls:
+        credentialName: gsf-discovery-tls
+        mode: SIMPLE
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: discovery
+  namespace: test
+spec:
+  gateways:
+    - discovery-test
+  hosts:
+    - gsf-discovery-test.home.lab
+  http:
+    - match:
+        - port: 80
+      route:
+        - destination:
+            host: gsf-discovery-server
+            port:
+              number: 50051
+#  tcp:
+#    - match:
+#        - port: 10443
+#      route:
+#        - destination:
+#            host: gsf-discovery-server
+#            port:
+#              number: 50051
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gsf-discovery
+  namespace: istio-system
+spec:
+  secretName: gsf-discovery-tls
+  issuerRef:
+    name: kearos-issuer
+    kind: "ClusterIssuer"
+  commonName: gsf-discovery-test.home.lab
+  dnsNames:
+    - gsf-discovery-test.home.lab
