@@ -5,7 +5,7 @@ use clap::{Parser};
 use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,RegisterHubResponse, RegisterServerRequest, RegisterServerResponse, GetServersRequest, GetServersResponse, GitstafetteHub, GitstafetteServer, RegisterResponse,
    discovery_server::{Discovery, DiscoveryServer}};
 
-use gitstafette_info::{GetInfoRequest, GetInfoResponse, InstanceType, info_server::{Info, InfoServer}};
+use gitstafette_info::{GetInfoRequest, GetInfoResponse, InstanceType, ServerInfo, info_server::{Info, InfoServer}};
 
 use crate::store::inmemory::*;
 
@@ -33,24 +33,25 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
-    let address = format!("{}:{}", cli.listener_address, cli.port);
-    let discovery_service = DiscoveryServer::new(DiscoveryService{store: InMemoryStore::new()});
-    let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
+  let cli = Cli::parse();
+  let address = format!("{}:{}", cli.listener_address, cli.port);
+  let discovery_service = DiscoveryServer::new(DiscoveryService{store: InMemoryStore::new()});
+  let info_service = InfoServer::new(InfoService{});
+  let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
 
-    health_reporter.set_serving::<DiscoveryServer<DiscoveryService>>()
-        .await;
+  health_reporter.set_serving::<DiscoveryServer<DiscoveryService>>().await;
 
-    // create SocketAddr from address
-    let socket_address = address.parse().unwrap();
+  // create SocketAddr from address
+  let socket_address = address.parse().unwrap();
 
-    println!("Gistafette Discovery server listening on {}", address);
-    Server::builder()
-      .add_service(health_service)
-      .add_service(discovery_service)
-      .serve(socket_address)
-      .await?;
-    Ok(())
+  println!("Gistafette Discovery server listening on {}", address);
+  Server::builder()
+    .add_service(health_service)
+    .add_service(discovery_service)
+    .add_service(info_service)
+    .serve(socket_address)
+    .await?;
+  Ok(())
 }
 
 
@@ -178,17 +179,24 @@ impl Info for InfoService {
       println!("Got a request: {:?}", request);
 
       // collect Hostname if its set, else use localhost
-      let hostnameEnv = std::env::var("HOSTNAME");
-      let hostname = hostnameEnv.unwrap_or_else(|_| "localhost".to_string());
+      let hostname_env = std::env::var("HOSTNAME");
+      let hostname = hostname_env.unwrap_or_else(|_| "localhost".to_string());
+
+      let server_info = ServerInfo {
+        hostname: hostname.to_string(),
+        ip: "127.0.0.1".to_string(),
+        port: "50051".to_string(),
+        protocol: "http".to_string(),
+        repositories: None,
+      };
 
       let response = GetInfoResponse {
         alive: true,
         instance_type: InstanceType::Discovery.into(),
         version: "0.1.0".to_string(),
         name: "Gitstafette Discovery".to_string(),
-        hostname: hostname.to_string(),
-        ip: "".to_string(),
-        port: "50051".to_string(),
+        server: Some(server_info),
+        relay: None,
       };
 
       return Ok(Response::new(response));

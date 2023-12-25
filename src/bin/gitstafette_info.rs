@@ -17,12 +17,24 @@ pub struct GetInfoResponse {
     pub version: ::prost::alloc::string::String,
     #[prost(string, tag = "4")]
     pub name: ::prost::alloc::string::String,
-    #[prost(string, tag = "5")]
+    #[prost(message, optional, tag = "5")]
+    pub server: ::core::option::Option<ServerInfo>,
+    #[prost(message, optional, tag = "6")]
+    pub relay: ::core::option::Option<ServerInfo>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ServerInfo {
+    #[prost(string, tag = "1")]
     pub hostname: ::prost::alloc::string::String,
-    #[prost(string, tag = "6")]
+    #[prost(string, tag = "2")]
     pub ip: ::prost::alloc::string::String,
-    #[prost(string, tag = "7")]
+    #[prost(string, tag = "3")]
     pub port: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub protocol: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "5")]
+    pub repositories: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

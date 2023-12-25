@@ -15,9 +15,16 @@ message GetInfoResponse {
   InstanceType instance_type = 2;
   string version = 3;
   string name = 4;
-  string hostname = 5;
-  string ip = 6;
-  string port = 7;
+  ServerInfo server = 5;
+  optional ServerInfo relay = 6;
+}
+
+message ServerInfo {
+  string hostname = 1;
+  string ip = 2;
+  string port = 3;
+  string protocol = 4;
+  optional string repositories = 5;
 }
 
 enum InstanceType {

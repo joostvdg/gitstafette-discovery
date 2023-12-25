@@ -4,9 +4,21 @@ use gitstafette_discovery::{
     discovery_client::DiscoveryClient, GetHubsRequest, GitstafetteHub, RegisterHubRequest,GitstafetteServer, GetServersRequest, RegisterServerRequest
 };
 
-pub mod gitstafette_discovery {
-    tonic::include_proto!("gitstafette_discovery");
-}
+use gitstafette_info:: {
+    info_client::InfoClient, GetInfoRequest, GetInfoResponse, InstanceType, ServerInfo, info_server::InfoServer
+};
+
+// use crate::gitstafette_info::info_server::Info;
+// use crate::gitstafette_info::InstanceType::*;
+
+
+// https://timvw.be/2022/04/28/notes-on-using-grpc-with-rust-and-tonic/
+#[path = "gitstafette_discovery.rs"]
+pub mod gitstafette_discovery;
+
+#[path = "gitstafette_info.rs"]
+pub mod gitstafette_info;
+
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -72,6 +84,16 @@ enum Commands {
         #[arg(long)]
         repositories: String,
     },
+
+    /// loops asking a local Gistafette Info server and registers it to the Discovery Server
+    InfoRegistrationLoop {
+        #[arg(long)]
+        info_host: String,
+        #[arg(long)]
+        info_port: String,
+        #[arg(long)]
+        info_protocol: String,
+    },
 }
 
 async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
@@ -83,8 +105,7 @@ async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
     // You can check the value provided by positional arguments, or option arguments
     println!("Discovery Server Address={server}");
 
-    let mut discovery_client: DiscoveryClient<tonic::transport::Channel> =
-        DiscoveryClient::connect(server).await?;
+    let mut discovery_client: DiscoveryClient<tonic::transport::Channel> = DiscoveryClient::connect(server).await?;
 
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
@@ -130,6 +151,87 @@ async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
                 }),
             };
             register_server(&mut discovery_client, request).await;
+        }
+        Some(Commands::InfoRegistrationLoop { info_host, info_port, info_protocol }) => {
+            println!("starting info registration loop");
+            loop {
+                let server = format!("{}://{}:{}", info_protocol, info_host, info_port);
+                let mut info_client: InfoClient<tonic::transport::Channel> = InfoClient::connect(server).await?;
+                let info_request = GetInfoRequest{ client_id: "myself".to_string(), client_endpoint: "127.0.0.1:50051".to_string() };
+
+                let request: tonic::Request<GetInfoRequest> = tonic::Request::new(info_request);
+                let response = info_client.get_info(request);
+                let result = response.await;
+                let info = result.unwrap();
+                println!("Service Info={:?}", info);
+
+                // depending on the response, we should register the server/hub? to the Discovery Server
+                if info.get_ref().alive {
+
+                    let server_info_opt = info.get_ref().server.as_ref();
+                    let relay_info_opt =  info.get_ref().relay.as_ref();
+
+                    if info.get_ref().instance_type == InstanceType::Hub.into() {
+                        println!("registering hub: {}", info.get_ref().name);
+                        // create request
+
+                        let mut hub = GitstafetteHub {
+                            id: "".to_string(),
+                            name: info.get_ref().name.to_string(),
+                            version: info.get_ref().version.to_string(),
+                            host: "".to_string(),
+                            port: "".to_string(),
+                            repositories: "".to_string(),
+                            relay_host: "".to_string(),
+                            relay_port: "".to_string(),
+                        };
+
+                        // if let Some(i) = path.find('?') {
+                        if let Some(server_info) = server_info_opt {
+                            hub.host = server_info.hostname.to_string();
+                            hub.port = server_info.port.to_string();
+                            if let Some(repositories) = server_info.repositories.as_ref() {
+                                hub.repositories = repositories.to_string();
+                            }
+                        }
+                        if let Some(relay_info) = relay_info_opt {
+                            hub.relay_host = relay_info.hostname.to_string();
+                            hub.relay_port = relay_info.port.to_string();
+                        }
+
+                        let request= RegisterHubRequest {
+                            hub: Some(hub),
+                        };
+                        register_hub(&mut discovery_client, request).await;
+                    }
+                    else {
+                        println!("registering server: {}", info.get_ref().name);
+                        // create request
+                        let mut gsf_server = GitstafetteServer {
+                            id: "".to_string(),
+                            name: info.get_ref().name.to_string(),
+                            version: info.get_ref().version.to_string(),
+                            repositories: "".to_string(),
+                            host: "".to_string(),
+                            port: "".to_string(),
+                        };
+
+                        if let Some(server_info) = server_info_opt {
+                            gsf_server.host = server_info.hostname.to_string();
+                            gsf_server.port = server_info.port.to_string();
+                            if let Some(repositories) = server_info.repositories.as_ref() {
+                                gsf_server.repositories = repositories.to_string();
+                            }
+                        }
+
+                        let request= RegisterServerRequest {
+                            server: Some(gsf_server),
+                        };
+                        register_server(&mut discovery_client, request).await;
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            }
         }
         None => {}
     }
