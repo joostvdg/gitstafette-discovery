@@ -2,6 +2,22 @@
 
 Service discovery service for Gitstafette
 
+## TODO
+
+* implement OTEL tracing
+* update container images
+  * server
+  * client (for Sidecar)
+* create Helm package
+  * for Discovery server
+* support TLS with custom CA
+* add as a sidecar to 
+  * Gitstafette server
+  * Gitstafette relay
+* support authentication
+  * OAUTH token with GRPC?
+
+
 ## Links
 
 * https://blog.logrocket.com/a-practical-guide-to-async-in-rust/

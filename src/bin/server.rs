@@ -1,5 +1,9 @@
+use std::error::Error;
 use tonic::{transport::Server, Request, Response, Status};
-
+use std::net::SocketAddr;
+use autometrics::{autometrics, prometheus_exporter};
+use autometrics::prometheus_exporter::PrometheusResponse;
+use axum::{routing::get, Router};
 use clap::{Parser};
 
 use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,RegisterHubResponse, RegisterServerRequest, RegisterServerResponse, GetServersRequest, GetServersResponse, GitstafetteHub, GitstafetteServer, RegisterResponse,
@@ -8,6 +12,8 @@ use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,R
 use gitstafette_info::{GetInfoRequest, GetInfoResponse, InstanceType, ServerInfo, info_server::{Info, InfoServer}};
 
 use crate::store::inmemory::*;
+
+
 
 mod store;
 
@@ -32,28 +38,50 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn main() {
+  // Set up the exporter to collect metrics
+  prometheus_exporter::init();
+
   let cli = Cli::parse();
   let address = format!("{}:{}", cli.listener_address, cli.port);
   let discovery_service = DiscoveryServer::new(DiscoveryService{store: InMemoryStore::new()});
   let info_service = InfoServer::new(InfoService{});
   let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
-
   health_reporter.set_serving::<DiscoveryServer<DiscoveryService>>().await;
 
   // create SocketAddr from address
   let socket_address = address.parse().unwrap();
-
   println!("Gistafette Discovery server listening on {}", address);
+  tokio::spawn(async move {
   Server::builder()
     .add_service(health_service)
     .add_service(discovery_service)
     .add_service(info_service)
     .serve(socket_address)
-    .await?;
-  Ok(())
+    .await
+    .expect("gRPC server failed");
+  });
+
+  // Web server with Axum
+  let web_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+  let app = Router::new()
+      .route("/", get(handler))
+      .route(
+        "/metrics",
+        get(|| async { prometheus_exporter::encode_http_response() }),
+  );
+
+  axum::Server::bind(&web_addr)
+      .serve(app.into_make_service())
+      .await
+      .expect("Web server failed");
+
 }
 
+#[autometrics]
+async fn handler() -> &'static str {
+  "Hello, World!"
+}
 
 #[derive(Debug, Default)]
 pub struct DiscoveryService {

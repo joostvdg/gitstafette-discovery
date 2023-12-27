@@ -5,12 +5,8 @@ use gitstafette_discovery::{
 };
 
 use gitstafette_info:: {
-    info_client::InfoClient, GetInfoRequest, GetInfoResponse, InstanceType, ServerInfo, info_server::InfoServer
+    info_client::InfoClient, GetInfoRequest, InstanceType
 };
-
-// use crate::gitstafette_info::info_server::Info;
-// use crate::gitstafette_info::InstanceType::*;
-
 
 // https://timvw.be/2022/04/28/notes-on-using-grpc-with-rust-and-tonic/
 #[path = "gitstafette_discovery.rs"]
@@ -171,7 +167,8 @@ async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
                     let server_info_opt = info.get_ref().server.as_ref();
                     let relay_info_opt =  info.get_ref().relay.as_ref();
 
-                    if info.get_ref().instance_type == InstanceType::Hub.into() {
+
+                    if InstanceType::Hub == InstanceType::try_from(info.get_ref().instance_type).unwrap() {
                         println!("registering hub: {}", info.get_ref().name);
                         // create request
 

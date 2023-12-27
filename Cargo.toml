@@ -6,9 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+autometrics = { version = "1.0.0", features = ["prometheus-exporter"] }
+axum =  { version = "0.6", features = ["json"] }
 clap = { version = "4.3.21", features = ["derive"] }
 prost = "0.12.3"
-tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.35.1", features = ["full"] }
 tonic = "0.10.2"
 tonic-health = "0.10.2"
 
