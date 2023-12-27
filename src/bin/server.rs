@@ -97,6 +97,7 @@ pub struct DiscoveryService {
 #[tonic::async_trait]
 impl Discovery for DiscoveryService {
 
+  #[autometrics]
   async fn register_server(&self, request: Request<RegisterServerRequest>) -> Result<Response<RegisterServerResponse>, Status> {
     println!("Got a request: {:?}", request);
     let response: RegisterResponse = gitstafette_discovery::RegisterResponse {
@@ -121,6 +122,7 @@ impl Discovery for DiscoveryService {
     }));
   }
 
+  #[autometrics]
   async fn register_hub(&self, request: Request<RegisterHubRequest>) -> Result<Response<RegisterHubResponse>, Status> {
     println!("Got a request: {:?}", request);
     
@@ -149,6 +151,7 @@ impl Discovery for DiscoveryService {
     }));
   }
 
+  #[autometrics]
   async fn get_servers(&self, request: Request<GetServersRequest>) -> Result<Response<GetServersResponse>, Status> {
     println!("Got a request: {:?}", request);
 
@@ -170,6 +173,7 @@ impl Discovery for DiscoveryService {
     }));
   }
 
+  #[autometrics]
   async fn get_hubs(&self, request: Request<GetHubsRequest>) -> Result<Response<GetHubsResponse>, Status> {
     println!("Got a request: {:?}", request);
 
@@ -203,6 +207,7 @@ pub struct InfoService {
 #[tonic::async_trait]
 impl Info for InfoService {
 
+    #[autometrics]
     async fn get_info(&self, request: Request<GetInfoRequest>) -> Result<Response<GetInfoResponse>, Status> {
       println!("Got a request: {:?}", request);
 
