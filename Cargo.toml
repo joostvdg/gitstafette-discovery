@@ -6,16 +6,28 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-autometrics = { version = "1.0.0", features = ["prometheus-exporter"] }
+autometrics = { version = "1.0.0", features = ["prometheus-exporter",  "opentelemetry-0_21", "otel-push-exporter-http",  "otel-push-exporter-grpc", "otel-push-exporter-tokio"] }
 axum =  { version = "0.6", features = ["json"] }
 clap = { version = "4.3.21", features = ["derive"] }
 prost = "0.12.3"
 tokio = { version = "1.35.1", features = ["full"] }
-tonic = "0.10.2"
+tonic = { version = "0.10.2" , features = ["tls", "tls-roots"]}
 tonic-health = "0.10.2"
+
+
+opentelemetry = "0.21"
+opentelemetry_sdk = "0.21"
+opentelemetry-stdout = { version = "0.2.0", features = ["trace"] }
+opentelemetry-otlp = { version = "=0.14", features = ["reqwest-client", "reqwest-rustls", "http-proto", "tls"]}
+tracing = "0.1"
+tracing-opentelemetry = "0.22"
+tracing-subscriber = "0.3"
+tracing-core = "0.1.32"
+opentelemetry-semantic-conventions = "0.13.0"
 
 [build-dependencies]
 tonic-build = "0.10.2"
+vergen = { version = "8.1", features = ["git", "gitcl"] }
 
 [profile.dev]
 incremental = false

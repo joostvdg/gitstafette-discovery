@@ -1,21 +1,22 @@
-use std::error::Error;
-use tonic::{transport::Server, Request, Response, Status};
 use std::net::SocketAddr;
+use tonic::{Request, Response, Status, transport::Server};
 use autometrics::{autometrics, prometheus_exporter};
-use autometrics::prometheus_exporter::PrometheusResponse;
+
 use axum::{routing::get, Router};
 use clap::{Parser};
 
 use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,RegisterHubResponse, RegisterServerRequest, RegisterServerResponse, GetServersRequest, GetServersResponse, GitstafetteHub, GitstafetteServer, RegisterResponse,
-   discovery_server::{Discovery, DiscoveryServer}};
+  discovery_server::{Discovery, DiscoveryServer}
+};
 
-use gitstafette_info::{GetInfoRequest, GetInfoResponse, InstanceType, ServerInfo, info_server::{Info, InfoServer}};
+use gitstafette_info::{GetInfoRequest, GetInfoResponse, InstanceType, ServerInfo,
+  info_server::{Info, InfoServer}
+};
 
 use crate::store::inmemory::*;
 
-
-
 mod store;
+mod otel;
 
 // https://timvw.be/2022/04/28/notes-on-using-grpc-with-rust-and-tonic/
 #[path = "gitstafette_discovery.rs"]
@@ -41,6 +42,8 @@ struct Cli {
 pub async fn main() {
   // Set up the exporter to collect metrics
   prometheus_exporter::init();
+
+  let _guard = otel::tracing::init_tracing_subscriber();
 
   let cli = Cli::parse();
   let address = format!("{}:{}", cli.listener_address, cli.port);
@@ -79,6 +82,7 @@ pub async fn main() {
 }
 
 #[autometrics]
+#[tracing::instrument]
 async fn handler() -> &'static str {
   "Hello, World!"
 }
@@ -98,6 +102,7 @@ pub struct DiscoveryService {
 impl Discovery for DiscoveryService {
 
   #[autometrics]
+  #[tracing::instrument]
   async fn register_server(&self, request: Request<RegisterServerRequest>) -> Result<Response<RegisterServerResponse>, Status> {
     println!("Got a request: {:?}", request);
     let response: RegisterResponse = gitstafette_discovery::RegisterResponse {
@@ -123,6 +128,7 @@ impl Discovery for DiscoveryService {
   }
 
   #[autometrics]
+  #[tracing::instrument]
   async fn register_hub(&self, request: Request<RegisterHubRequest>) -> Result<Response<RegisterHubResponse>, Status> {
     println!("Got a request: {:?}", request);
     
@@ -152,6 +158,7 @@ impl Discovery for DiscoveryService {
   }
 
   #[autometrics]
+  #[tracing::instrument]
   async fn get_servers(&self, request: Request<GetServersRequest>) -> Result<Response<GetServersResponse>, Status> {
     println!("Got a request: {:?}", request);
 
@@ -174,6 +181,7 @@ impl Discovery for DiscoveryService {
   }
 
   #[autometrics]
+  #[tracing::instrument]
   async fn get_hubs(&self, request: Request<GetHubsRequest>) -> Result<Response<GetHubsResponse>, Status> {
     println!("Got a request: {:?}", request);
 
@@ -208,6 +216,7 @@ pub struct InfoService {
 impl Info for InfoService {
 
     #[autometrics]
+    #[tracing::instrument]
     async fn get_info(&self, request: Request<GetInfoRequest>) -> Result<Response<GetInfoResponse>, Status> {
       println!("Got a request: {:?}", request);
 
@@ -235,3 +244,4 @@ impl Info for InfoService {
       return Ok(Response::new(response));
     }
 }
+

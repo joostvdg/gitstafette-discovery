@@ -1,5 +1,6 @@
 use std::env;
 use std::path::PathBuf;
+use vergen;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 
@@ -22,6 +23,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .file_descriptor_set_path(original_out_dir.join("gitstafette_info.bin"))
         .compile(&[ "./protos/gitstafette_info.proto"], &["proto"])?;
 
+    vergen::EmitBuilder::builder()
+        .git_sha(true)
+        .git_branch()
+        .emit()
+        .expect("Unable to generate build info");
 
     Ok(())
 }
