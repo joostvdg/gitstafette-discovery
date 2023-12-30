@@ -4,6 +4,8 @@ use autometrics::{autometrics, prometheus_exporter};
 
 use axum::{routing::get, Router};
 use clap::{Parser};
+use tracing::{span, Level, event, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,RegisterHubResponse, RegisterServerRequest, RegisterServerResponse, GetServersRequest, GetServersResponse, GitstafetteHub, GitstafetteServer, RegisterResponse,
   discovery_server::{Discovery, DiscoveryServer}
@@ -43,7 +45,7 @@ pub async fn main() {
   // Set up the exporter to collect metrics
   prometheus_exporter::init();
 
-  let _guard = otel::tracing::init_tracing_subscriber();
+  let _guard = otel::tracing::init_tracing_subscriber("server".to_string());
 
   let cli = Cli::parse();
   let address = format!("{}:{}", cli.listener_address, cli.port);
@@ -100,38 +102,11 @@ pub struct DiscoveryService {
 
 #[tonic::async_trait]
 impl Discovery for DiscoveryService {
-
-  #[autometrics]
-  #[tracing::instrument]
-  async fn register_server(&self, request: Request<RegisterServerRequest>) -> Result<Response<RegisterServerResponse>, Status> {
-    println!("Got a request: {:?}", request);
-    let response: RegisterResponse = gitstafette_discovery::RegisterResponse {
-      success: true,
-      message: "Hub registered".to_string(),
-      error: "".to_string(),
-      error_code: "".to_string(),
-    };
-
-    let server = request.into_inner().server.unwrap();
-    let server_internal = GSFServer {
-      id: server.id.to_string(),
-      name: server.name.to_string(),
-      version: server.version.to_string(),
-      host: server.host.to_string(),
-      port: server.port.to_string(),
-      repositories: server.repositories.to_string(),
-    };
-    self.store.add_server(server_internal);
-    return Ok(Response::new(RegisterServerResponse{
-      response: Some(response),
-    }));
-  }
-
   #[autometrics]
   #[tracing::instrument]
   async fn register_hub(&self, request: Request<RegisterHubRequest>) -> Result<Response<RegisterHubResponse>, Status> {
     println!("Got a request: {:?}", request);
-    
+
     let response: RegisterResponse = gitstafette_discovery::RegisterResponse {
       success: true,
       message: "Hub registered".to_string(),
@@ -157,26 +132,28 @@ impl Discovery for DiscoveryService {
     }));
   }
 
-  #[autometrics]
   #[tracing::instrument]
-  async fn get_servers(&self, request: Request<GetServersRequest>) -> Result<Response<GetServersResponse>, Status> {
-    println!("Got a request: {:?}", request);
+  async fn register_server(&self, request: Request<RegisterServerRequest>) -> Result<Response<RegisterServerResponse>, Status> {
 
-    let mut servers: Vec<GitstafetteServer> = Vec::new();
-    for internal_server in self.store.get_servers() {
-      let server = GitstafetteServer {
-        id: internal_server.id.to_string(),
-        name: internal_server.name.to_string(),
-        version: internal_server.version.to_string(),
-        host: internal_server.host.to_string(),
-        port: internal_server.port.to_string(),
-        repositories: internal_server.repositories.to_string(),
-      };
-      servers.push(server);
-    }
+    let response: RegisterResponse = gitstafette_discovery::RegisterResponse {
+      success: true,
+      message: "Hub registered".to_string(),
+      error: "".to_string(),
+      error_code: "".to_string(),
+    };
 
-    return Ok(Response::new(GetServersResponse {
-      servers,
+    let server = request.into_inner().server.unwrap();
+    let server_internal = GSFServer {
+      id: server.id.to_string(),
+      name: server.name.to_string(),
+      version: server.version.to_string(),
+      host: server.host.to_string(),
+      port: server.port.to_string(),
+      repositories: server.repositories.to_string(),
+    };
+    self.store.add_server(server_internal);
+    return Ok(Response::new(RegisterServerResponse{
+      response: Some(response),
     }));
   }
 
@@ -204,6 +181,29 @@ impl Discovery for DiscoveryService {
       hubs,
     }));
   }
+
+  #[autometrics]
+  #[tracing::instrument]
+  async fn get_servers(&self, request: Request<GetServersRequest>) -> Result<Response<GetServersResponse>, Status> {
+    println!("Got a request: {:?}", request);
+
+    let mut servers: Vec<GitstafetteServer> = Vec::new();
+    for internal_server in self.store.get_servers() {
+      let server = GitstafetteServer {
+        id: internal_server.id.to_string(),
+        name: internal_server.name.to_string(),
+        version: internal_server.version.to_string(),
+        host: internal_server.host.to_string(),
+        port: internal_server.port.to_string(),
+        repositories: internal_server.repositories.to_string(),
+      };
+      servers.push(server);
+    }
+
+    return Ok(Response::new(GetServersResponse {
+      servers,
+    }));
+  }
 }
 
 
@@ -215,9 +215,30 @@ pub struct InfoService {
 #[tonic::async_trait]
 impl Info for InfoService {
 
-    #[autometrics]
-    #[tracing::instrument]
+    // #[autometrics]
     async fn get_info(&self, request: Request<GetInfoRequest>) -> Result<Response<GetInfoResponse>, Status> {
+      println!("Got a request: {:?}", request);
+
+      let span = span!(Level::INFO, "get_info");
+      let mut trace_id = 0;
+      if request.metadata().get("x-trace-id") == None {
+        println!("No trace id found");
+      } else {
+        let mut trace_id_value = request.metadata().get("x-trace-id").unwrap().clone();
+        let mut trace_id_str = trace_id_value.to_str().unwrap().to_string();
+        trace_id = trace_id_str.parse::<u64>().unwrap();
+        print!("trace_id: {}", trace_id);
+        let parent_span_id = span::Id::from_u64(trace_id);
+        span.record("trace_id", &parent_span_id.into_u64().to_string());
+        span.set_attribute("trace_id", parent_span_id.into_u64().to_string());
+      }
+
+
+      span.record("otel.kind", &"server");
+      span.set_attribute("otel.kind", "server");
+
+      println!("span: {:?}", span);
+
       println!("Got a request: {:?}", request);
 
       // collect Hostname if its set, else use localhost
