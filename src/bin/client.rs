@@ -3,11 +3,12 @@ use autometrics::{autometrics, prometheus_exporter};
 use clap::{Parser, Subcommand};
 use opentelemetry::{global, propagation::Injector};
 use opentelemetry::{
-    trace::{SpanKind, TraceContextExt, Tracer},
+    trace::{ TraceContextExt, Tracer},
     Context, KeyValue,
 };
 
 use tonic::transport::Channel;
+use tracing::Instrument;
 
 use gitstafette_discovery::{
     discovery_client::DiscoveryClient, GetHubsRequest, GitstafetteHub, RegisterHubRequest,GitstafetteServer, GetServersRequest, RegisterServerRequest
@@ -108,6 +109,9 @@ enum Commands {
 async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    prometheus_exporter::init();
+
+    otel::tracing::init_tracing_subscriber("client".to_string());
 
     let server = format!("{}://{}:{}", cli.protocol, cli.hostname, cli.port);
 
@@ -115,6 +119,8 @@ async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
     println!("Discovery Server Address={server}");
 
     let mut discovery_client: DiscoveryClient<tonic::transport::Channel> = DiscoveryClient::connect(server).await?;
+    let span = otel::tracing::create_client_span( "GSF-Discovery/CLI".to_string(), "parse_cli".to_string());
+    let cx = Context::current_with_span(span);
 
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
@@ -134,7 +140,7 @@ async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
                     relay_port: relay_port.to_string(),
                 }),
             };
-            register_hub(&mut discovery_client, request).await;
+            register_hub(&mut discovery_client, request, &cx).await;
         }
         Some(Commands::GetHubs{print}) => {
             if *print {
@@ -159,10 +165,10 @@ async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
                     repositories: repositories.to_string(),
                 }),
             };
-            register_server(&mut discovery_client, request).await;
+            register_server(&mut discovery_client, request, &cx).await;
         }
         Some(Commands::InfoRegistrationLoop { info_host, info_port, info_protocol }) => {
-            println!("starting info registration loop");
+            println!("Starting info registration loop");
             sync_local_status_to_discovery_server(&mut discovery_client, info_host, info_port, info_protocol).await?;
         }
         None => {}
@@ -185,22 +191,14 @@ impl<'a> Injector for MetadataMap<'a> {
     }
 }
 
-// #[autometrics]
+#[autometrics]
+#[tracing::instrument]
 async fn sync_local_status_to_discovery_server(mut discovery_client: &mut DiscoveryClient<Channel>, info_host: &String, info_port: &String, info_protocol: &String) -> Result<(), Box<dyn Error>> {
-    prometheus_exporter::init();
-
-    otel::tracing::init_tracing_subscriber("client".to_string());
-
     let server = format!("{}://{}:{}", info_protocol, info_host, info_port);
     let mut info_client: InfoClient<tonic::transport::Channel> = InfoClient::connect(server).await?;
 
     loop {
-        let tracer = global::tracer("example/client");
-        let span = tracer
-            .span_builder(String::from("GSF-Discovery/client"))
-            .with_kind(SpanKind::Client)
-            .with_attributes(vec![KeyValue::new("component", "grpc")])
-            .start(&tracer);
+        let span = otel::tracing::create_client_span( "GSF-Discovery/client".to_string(), "sync_local_status_to_discovery_server".to_string());
         let cx = Context::current_with_span(span);
 
         let info_request = GetInfoRequest { client_id: "myself".to_string(), client_endpoint: "127.0.0.1:50051".to_string() };
@@ -265,7 +263,7 @@ async fn sync_local_status_to_discovery_server(mut discovery_client: &mut Discov
                 let request = RegisterHubRequest {
                     hub: Some(hub),
                 };
-                register_hub(&mut discovery_client, request).await;
+                register_hub(&mut discovery_client, request, &cx).await;
                 cx.span().add_event("registered hub".to_string(), vec![]);
             } else {
                 println!("registering server: {}", info.get_ref().name);
@@ -290,10 +288,13 @@ async fn sync_local_status_to_discovery_server(mut discovery_client: &mut Discov
                 let request = RegisterServerRequest {
                     server: Some(gsf_server),
                 };
-                register_server(&mut discovery_client, request).await;
+
+                register_server(&mut discovery_client, request, &cx).await;
                 cx.span().add_event("registered server".to_string(), vec![]);
             }
         }
+        cx.span().add_event("end of loop".to_string(), vec![]);
+        cx.span().end();
         tokio::time::sleep(std::time::Duration::from_secs(10)).await;
     }
 }
@@ -305,8 +306,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     parse_cli().await
 }
 
-async fn register_hub(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>, register_hub_request: RegisterHubRequest) {
-    let request = tonic::Request::new(register_hub_request);
+async fn register_hub(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>, register_hub_request: RegisterHubRequest, cx: &Context) {
+    let mut request = tonic::Request::new(register_hub_request);
+    global::get_text_map_propagator(|propagator| {
+        propagator.inject_context(&cx, &mut MetadataMap(request.metadata_mut()))
+    });
 
     let response = discovery_client.register_hub(request);
     let something = response.await;
@@ -361,9 +365,12 @@ async fn get_servers(discovery_client: &mut DiscoveryClient<tonic::transport::Ch
 /// # Arguments
 /// * `discovery_client` - DiscoveryClient
 /// * `register_server_request` - RegisterServerRequest
-async fn register_server(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>, register_server_request: RegisterServerRequest) {
-    let request: tonic::Request<RegisterServerRequest> = tonic::Request::new(register_server_request);
+async fn register_server(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>, register_server_request: RegisterServerRequest, cx: &Context) {
+    let mut request: tonic::Request<RegisterServerRequest> = tonic::Request::new(register_server_request);
 
+    global::get_text_map_propagator(|propagator| {
+        propagator.inject_context(cx, &mut MetadataMap(request.metadata_mut()))
+    });
     let response = discovery_client.register_server(request);
     let something = response.await;
     println!("RESPONSE={:?}", something.unwrap());

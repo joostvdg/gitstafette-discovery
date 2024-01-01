@@ -5,11 +5,8 @@ use autometrics::{autometrics, prometheus_exporter};
 use axum::{routing::get, Router};
 use clap::{Parser};
 
-use opentelemetry::{
-  global,
-  propagation::Extractor,
-  trace::{Span, SpanKind, Tracer},
-};
+use opentelemetry::{Context, global, propagation::Extractor, trace::{Span, SpanKind, Tracer}};
+use opentelemetry::trace::TraceContextExt;
 
 use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,RegisterHubResponse, RegisterServerRequest, RegisterServerResponse, GetServersRequest, GetServersResponse, GitstafetteHub, GitstafetteServer, RegisterResponse,
   discovery_server::{Discovery, DiscoveryServer}
@@ -18,6 +15,7 @@ use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,R
 use gitstafette_info::{GetInfoRequest, GetInfoResponse, InstanceType, ServerInfo,
   info_server::{Info, InfoServer}
 };
+use crate::otel::tracing::create_server_span_from_context;
 
 use crate::store::inmemory::*;
 
@@ -114,6 +112,12 @@ impl Discovery for DiscoveryService {
   async fn register_hub(&self, request: Request<RegisterHubRequest>) -> Result<Response<RegisterHubResponse>, Status> {
     println!("Got a request: {:?}", request);
 
+    let parent_cx = global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
+    let span = create_server_span_from_context("GSF-Discovery/server".to_string(), "register_hub".to_string(), parent_cx);
+    let cx = Context::current_with_value(span);
+
+    cx.span().add_event("RegisterHub".to_string(), vec![]);
+
     let response: RegisterResponse = gitstafette_discovery::RegisterResponse {
       success: true,
       message: "Hub registered".to_string(),
@@ -139,8 +143,15 @@ impl Discovery for DiscoveryService {
     }));
   }
 
+  #[autometrics]
   #[tracing::instrument]
   async fn register_server(&self, request: Request<RegisterServerRequest>) -> Result<Response<RegisterServerResponse>, Status> {
+
+    let parent_cx = global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
+    let span = create_server_span_from_context("GSF-Discovery/server".to_string(), "register_server".to_string(), parent_cx);
+    let cx = Context::current_with_value(span);
+
+    cx.span().add_event("RegisterServer".to_string(), vec![]);
 
     let response: RegisterResponse = gitstafette_discovery::RegisterResponse {
       success: true,
@@ -169,6 +180,12 @@ impl Discovery for DiscoveryService {
   async fn get_hubs(&self, request: Request<GetHubsRequest>) -> Result<Response<GetHubsResponse>, Status> {
     println!("Got a request: {:?}", request);
 
+    let parent_cx = global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
+    let span = create_server_span_from_context("GSF-Discovery/server".to_string(), "get_hubs".to_string(), parent_cx);
+    let cx = Context::current_with_value(span);
+
+    cx.span().add_event("GetHubs".to_string(), vec![]);
+
     let mut hubs: Vec<GitstafetteHub> = Vec::new();
     for internal_hub in self.store.get_hubs() {
       let hub = GitstafetteHub {
@@ -193,6 +210,12 @@ impl Discovery for DiscoveryService {
   #[tracing::instrument]
   async fn get_servers(&self, request: Request<GetServersRequest>) -> Result<Response<GetServersResponse>, Status> {
     println!("Got a request: {:?}", request);
+
+    let parent_cx = global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
+    let span = create_server_span_from_context("GSF-Discovery/server".to_string(), "get_servers".to_string(), parent_cx);
+    let cx = Context::current_with_value(span);
+
+    cx.span().add_event("GetServers".to_string(), vec![]);
 
     let mut servers: Vec<GitstafetteServer> = Vec::new();
     for internal_server in self.store.get_servers() {
@@ -222,19 +245,16 @@ pub struct InfoService {
 #[tonic::async_trait]
 impl Info for InfoService {
 
-    // #[autometrics]
+    #[autometrics]
+    #[tracing::instrument]
     async fn get_info(&self, request: Request<GetInfoRequest>) -> Result<Response<GetInfoResponse>, Status> {
       println!("Got a request: {:?}", request);
 
-      let parent_cx =
-          global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
-      let tracer = global::tracer("example/server");
-      let mut span = tracer
-          .span_builder("GSF-Discovery/server")
-          .with_kind(SpanKind::Server)
-          .start_with_context(&tracer, &parent_cx);
+      let parent_cx = global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
+      let span = create_server_span_from_context("GSF-Discovery/server".to_string(), "get_info".to_string(), parent_cx);
+      let cx = Context::current_with_value(span);
 
-      span.add_event("Info Response", vec![]);
+      cx.span().add_event("GetInfo".to_string(), vec![]);
 
       // collect Hostname if its set, else use localhost
       let hostname_env = std::env::var("HOSTNAME");

@@ -1,4 +1,6 @@
-use opentelemetry::{global, KeyValue};
+use opentelemetry::{Context, global, KeyValue};
+use opentelemetry::global::BoxedSpan;
+use opentelemetry::trace::{SpanKind, Tracer as OtelTracer};
 use opentelemetry_otlp::{ WithExportConfig};
 use opentelemetry_sdk::{Resource, runtime};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
@@ -49,5 +51,39 @@ pub fn init_tracing_subscriber(service_name_suffix: String)  {
 
     let tracer = init_tracer(service_name_suffix);
     global::set_tracer_provider(tracer.provider().unwrap());
+}
+
+#[tracing::instrument]
+pub fn create_client_span(tracer_name: String, span_name: String) -> BoxedSpan {
+    let attributes = vec![
+        KeyValue::new("component", "grpc"),
+        KeyValue::new("rpc.service", "GitstafetteDiscovery"),
+        KeyValue::new("rpc.method", span_name.clone()),
+        KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION").to_string()),
+        KeyValue::new(DEPLOYMENT_ENVIRONMENT, "develop"),
+    ];
+    let tracer = global::tracer(tracer_name);
+    tracer
+        .span_builder(span_name.clone())
+        .with_kind(SpanKind::Client)
+        .with_attributes(attributes)
+        .start(&tracer)
+}
+
+#[tracing::instrument]
+pub fn create_server_span_from_context(tracer_name: String, span_name: String, parent_cx: Context) -> BoxedSpan {
+    let attributes = vec![
+        KeyValue::new("component", "grpc"),
+        KeyValue::new("rpc.service", "GitstafetteDiscovery"),
+        KeyValue::new("rpc.method", span_name.clone()),
+        KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION").to_string()),
+        KeyValue::new(DEPLOYMENT_ENVIRONMENT, "develop"),
+    ];
+    let tracer = global::tracer(tracer_name);
+    tracer
+        .span_builder("GSF-Discovery/server")
+        .with_kind(SpanKind::Server)
+        .with_attributes(attributes)
+        .start_with_context(&tracer, &parent_cx)
 }
 
