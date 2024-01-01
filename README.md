@@ -38,6 +38,8 @@ am start :8080
 * https://broch.tech/posts/rust-tracing-opentelemetry/
 * https://github.com/tekul/rust-tracing-otlp/blob/main/Cargo.toml
 * https://github.com/autometrics-dev/autometrics-rs/blob/main/examples/exemplars-tracing-opentelemetry/src/main.rs
+* https://www.aspecto.io/blog/distributed-tracing-with-opentelemetry-rust/
+* https://github.com/open-telemetry/opentelemetry-rust/tree/main/examples/tracing-grpc
 
 ```shell
 OpenTelemetry trace error occurred. Exporter otlp encountered the following error(s): the grpc server returns error (Unknown error): , detailed error message: h2 protocol error: http2 error: connection error detected: frame with invalid size

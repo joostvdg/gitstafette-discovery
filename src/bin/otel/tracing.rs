@@ -1,19 +1,10 @@
-use std::str::FromStr;
-use opentelemetry::KeyValue;
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry::{global, KeyValue};
+use opentelemetry_otlp::{ WithExportConfig};
 use opentelemetry_sdk::{Resource, runtime};
+use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{BatchConfig, RandomIdGenerator, Sampler, Tracer};
 use opentelemetry_semantic_conventions::resource::{DEPLOYMENT_ENVIRONMENT, SERVICE_NAME, SERVICE_VERSION};
 use opentelemetry_semantic_conventions::SCHEMA_URL;
-use tonic::metadata::{Ascii, MetadataValue};
-use tonic::Request;
-use tracing::span;
-use tracing_core::Level;
-use tracing_core::span::Id;
-use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
-use crate::gitstafette_info::GetInfoRequest;
 
 // Create a Resource that captures information about the entity for which telemetry is recorded.
 fn resource(service_name_suffix: String) -> Resource {
@@ -31,12 +22,13 @@ fn resource(service_name_suffix: String) -> Resource {
 }
 
 fn init_tracer(service_name_suffix: String) -> Tracer {
+    let trace_exporter = opentelemetry_otlp::new_exporter().tonic().with_endpoint("http://localhost:4317");
+
     opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_trace_config(
             opentelemetry_sdk::trace::Config::default()
                 // Customize sampling strategy
-
                 .with_sampler(Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(
                     1.0,
                 ))))
@@ -45,33 +37,17 @@ fn init_tracer(service_name_suffix: String) -> Tracer {
                 .with_resource(resource(service_name_suffix)),
         )
         .with_batch_config(BatchConfig::default())
-        .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint("http://localhost:4317"))
+        .with_exporter(trace_exporter)
         .install_batch(runtime::Tokio)
         .unwrap()
 
 }
 
 // Initialize tracing-subscriber and return OtelGuard for opentelemetry-related termination processing
-pub fn init_tracing_subscriber(service_name_suffix: String) -> OtelGuard {
-    // let meter_provider = init_meter_provider();
+pub fn init_tracing_subscriber(service_name_suffix: String)  {
+    global::set_text_map_propagator(TraceContextPropagator::new());
 
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::LevelFilter::from_level(
-            Level::INFO,
-        ))
-        .with(tracing_subscriber::fmt::layer())
-        .with(OpenTelemetryLayer::new(init_tracer(service_name_suffix)))
-        .init();
-
-    OtelGuard {  }
+    let tracer = init_tracer(service_name_suffix);
+    global::set_tracer_provider(tracer.provider().unwrap());
 }
 
-pub struct OtelGuard {
-
-}
-
-impl Drop for OtelGuard {
-    fn drop(&mut self) {
-        opentelemetry::global::shutdown_tracer_provider();
-    }
-}

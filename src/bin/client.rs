@@ -1,8 +1,12 @@
 use std::error::Error;
-use std::str::FromStr;
 use autometrics::{autometrics, prometheus_exporter};
 use clap::{Parser, Subcommand};
-use tonic::metadata::{Ascii, MetadataValue};
+use opentelemetry::{global, propagation::Injector};
+use opentelemetry::{
+    trace::{SpanKind, TraceContextExt, Tracer},
+    Context, KeyValue,
+};
+
 use tonic::transport::Channel;
 
 use gitstafette_discovery::{
@@ -14,14 +18,13 @@ use gitstafette_info:: {
 };
 
 // https://timvw.be/2022/04/28/notes-on-using-grpc-with-rust-and-tonic/
+#[allow(clippy::derive_partial_eq_without_eq)] // tonic don't derive Eq for generated types. We shouldn't manually change it.
 #[path = "gitstafette_discovery.rs"]
 pub mod gitstafette_discovery;
 
+#[allow(clippy::derive_partial_eq_without_eq)] // tonic don't derive Eq for generated types. We shouldn't manually change it.
 #[path = "gitstafette_info.rs"]
 pub mod gitstafette_info;
-
-use tracing::{span, Level, event, Span};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 mod otel;
 
@@ -164,43 +167,73 @@ async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
         }
         None => {}
     }
+
+    opentelemetry::global::shutdown_tracer_provider();
     Ok(())
 }
 
-#[tracing::instrument]
-#[autometrics]
+struct MetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
+
+impl<'a> Injector for MetadataMap<'a> {
+    /// Set a key and value in the MetadataMap.  Does nothing if the key or value are not valid inputs
+    fn set(&mut self, key: &str, value: String) {
+        if let Ok(key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes()) {
+            if let Ok(val) = tonic::metadata::MetadataValue::try_from(&value) {
+                self.0.insert(key, val);
+            }
+        }
+    }
+}
+
+// #[autometrics]
 async fn sync_local_status_to_discovery_server(mut discovery_client: &mut DiscoveryClient<Channel>, info_host: &String, info_port: &String, info_protocol: &String) -> Result<(), Box<dyn Error>> {
     prometheus_exporter::init();
 
-    let _guard = otel::tracing::init_tracing_subscriber("client".to_string());
+    otel::tracing::init_tracing_subscriber("client".to_string());
 
     let server = format!("{}://{}:{}", info_protocol, info_host, info_port);
     let mut info_client: InfoClient<tonic::transport::Channel> = InfoClient::connect(server).await?;
 
     loop {
-        let span = span!(Level::INFO, "sync_local_status_to_discovery_server").entered();
+        let tracer = global::tracer("example/client");
+        let span = tracer
+            .span_builder(String::from("GSF-Discovery/client"))
+            .with_kind(SpanKind::Client)
+            .with_attributes(vec![KeyValue::new("component", "grpc")])
+            .start(&tracer);
+        let cx = Context::current_with_span(span);
 
         let info_request = GetInfoRequest { client_id: "myself".to_string(), client_endpoint: "127.0.0.1:50051".to_string() };
         let mut request: tonic::Request<GetInfoRequest> = tonic::Request::new(info_request);
-        let span_id_raw = span.id().unwrap();
-        let span_id: MetadataValue<Ascii> = MetadataValue::from(span_id_raw.into_u64());
-        request.metadata_mut().append("x-trace-id", span_id);
-        span.set_attribute("otel.kind", "client");
-        span.set_attribute("trace_id", span_id_raw.into_u64().to_string());
-        println!("span={:?}", span);
 
-        let metadata_test = request.metadata_mut();
+        global::get_text_map_propagator(|propagator| {
+            propagator.inject_context(&cx, &mut MetadataMap(request.metadata_mut()))
+        });
+
         let response = info_client.get_info(request);
         let result = response.await;
+        if result.is_err() {
+            let status_code = result.unwrap_err().code();
+            cx.span().add_event(
+                "Got response!".to_string(),
+                vec![KeyValue::new("status", status_code.to_string())],
+            );
+            continue;
+        } else {
+            cx.span().add_event(
+                "Got response!".to_string(),
+                vec![KeyValue::new("status", "OK".to_string())],
+            );
+        }
+
         let info = result.unwrap();
-        println!("Service Info={:?}", info);
 
         // depending on the response, we should register the server/hub? to the Discovery Server
         if info.get_ref().alive {
             let server_info_opt = info.get_ref().server.as_ref();
             let relay_info_opt = info.get_ref().relay.as_ref();
 
-            event!(Level::INFO, "local service is alive");
+            cx.span().add_event("local service is alive".to_string(), vec![]);
 
             if InstanceType::Hub == InstanceType::try_from(info.get_ref().instance_type).unwrap() {
                 println!("registering hub: {}", info.get_ref().name);
@@ -233,7 +266,7 @@ async fn sync_local_status_to_discovery_server(mut discovery_client: &mut Discov
                     hub: Some(hub),
                 };
                 register_hub(&mut discovery_client, request).await;
-                event!(Level::INFO, "registered hub!");
+                cx.span().add_event("registered hub".to_string(), vec![]);
             } else {
                 println!("registering server: {}", info.get_ref().name);
                 // create request
@@ -258,7 +291,7 @@ async fn sync_local_status_to_discovery_server(mut discovery_client: &mut Discov
                     server: Some(gsf_server),
                 };
                 register_server(&mut discovery_client, request).await;
-                event!(Level::INFO, "registered server!");
+                cx.span().add_event("registered server".to_string(), vec![]);
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(10)).await;
@@ -272,7 +305,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     parse_cli().await
 }
 
-#[tracing::instrument]
 async fn register_hub(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>, register_hub_request: RegisterHubRequest) {
     let request = tonic::Request::new(register_hub_request);
 
@@ -281,7 +313,6 @@ async fn register_hub(discovery_client: &mut DiscoveryClient<tonic::transport::C
     println!("RESPONSE={:?}", something.unwrap());
 }
 
-#[tracing::instrument]
 async fn get_hubs(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>) {
     let request = tonic::Request::new(GetHubsRequest {
         client_id: "test".to_string(),
@@ -312,7 +343,6 @@ async fn get_hubs(discovery_client: &mut DiscoveryClient<tonic::transport::Chann
 /// # Remarks
 /// This function is used by the Gitstafette Relay to retrieve the Gitstafette Servers
 /// from the Discovery Server
-#[tracing::instrument]
 async fn get_servers(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>) -> Vec<GitstafetteServer> {
     let request = tonic::Request::new(GetServersRequest {
         client_id: "test".to_string(),
@@ -331,7 +361,6 @@ async fn get_servers(discovery_client: &mut DiscoveryClient<tonic::transport::Ch
 /// # Arguments
 /// * `discovery_client` - DiscoveryClient
 /// * `register_server_request` - RegisterServerRequest
-#[tracing::instrument]
 async fn register_server(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>, register_server_request: RegisterServerRequest) {
     let request: tonic::Request<RegisterServerRequest> = tonic::Request::new(register_server_request);
 

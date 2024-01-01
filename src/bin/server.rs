@@ -4,8 +4,12 @@ use autometrics::{autometrics, prometheus_exporter};
 
 use axum::{routing::get, Router};
 use clap::{Parser};
-use tracing::{span, Level, event, Span};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+use opentelemetry::{
+  global,
+  propagation::Extractor,
+  trace::{Span, SpanKind, Tracer},
+};
 
 use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,RegisterHubResponse, RegisterServerRequest, RegisterServerResponse, GetServersRequest, GetServersResponse, GitstafetteHub, GitstafetteServer, RegisterResponse,
   discovery_server::{Discovery, DiscoveryServer}
@@ -21,9 +25,11 @@ mod store;
 mod otel;
 
 // https://timvw.be/2022/04/28/notes-on-using-grpc-with-rust-and-tonic/
+#[allow(clippy::derive_partial_eq_without_eq)] // tonic don't derive Eq for generated types. We shouldn't manually change it.
 #[path = "gitstafette_discovery.rs"]
 pub mod gitstafette_discovery;
 
+#[allow(clippy::derive_partial_eq_without_eq)] // tonic don't derive Eq for generated types. We shouldn't manually change it.
 #[path = "gitstafette_info.rs"]
 pub mod gitstafette_info;
 
@@ -45,7 +51,7 @@ pub async fn main() {
   // Set up the exporter to collect metrics
   prometheus_exporter::init();
 
-  let _guard = otel::tracing::init_tracing_subscriber("server".to_string());
+  otel::tracing::init_tracing_subscriber("server".to_string());
 
   let cli = Cli::parse();
   let address = format!("{}:{}", cli.listener_address, cli.port);
@@ -81,6 +87,7 @@ pub async fn main() {
       .await
       .expect("Web server failed");
 
+  opentelemetry::global::shutdown_tracer_provider();
 }
 
 #[autometrics]
@@ -219,27 +226,15 @@ impl Info for InfoService {
     async fn get_info(&self, request: Request<GetInfoRequest>) -> Result<Response<GetInfoResponse>, Status> {
       println!("Got a request: {:?}", request);
 
-      let span = span!(Level::INFO, "get_info");
-      let mut trace_id = 0;
-      if request.metadata().get("x-trace-id") == None {
-        println!("No trace id found");
-      } else {
-        let mut trace_id_value = request.metadata().get("x-trace-id").unwrap().clone();
-        let mut trace_id_str = trace_id_value.to_str().unwrap().to_string();
-        trace_id = trace_id_str.parse::<u64>().unwrap();
-        print!("trace_id: {}", trace_id);
-        let parent_span_id = span::Id::from_u64(trace_id);
-        span.record("trace_id", &parent_span_id.into_u64().to_string());
-        span.set_attribute("trace_id", parent_span_id.into_u64().to_string());
-      }
+      let parent_cx =
+          global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
+      let tracer = global::tracer("example/server");
+      let mut span = tracer
+          .span_builder("GSF-Discovery/server")
+          .with_kind(SpanKind::Server)
+          .start_with_context(&tracer, &parent_cx);
 
-
-      span.record("otel.kind", &"server");
-      span.set_attribute("otel.kind", "server");
-
-      println!("span: {:?}", span);
-
-      println!("Got a request: {:?}", request);
+      span.add_event("Info Response", vec![]);
 
       // collect Hostname if its set, else use localhost
       let hostname_env = std::env::var("HOSTNAME");
@@ -266,3 +261,22 @@ impl Info for InfoService {
     }
 }
 
+struct MetadataMap<'a>(&'a tonic::metadata::MetadataMap);
+
+impl<'a> Extractor for MetadataMap<'a> {
+  /// Get a value for a key from the MetadataMap.  If the value can't be converted to &str, returns None
+  fn get(&self, key: &str) -> Option<&str> {
+    self.0.get(key).and_then(|metadata| metadata.to_str().ok())
+  }
+
+  /// Collect all the keys from the MetadataMap.
+  fn keys(&self) -> Vec<&str> {
+    self.0
+        .keys()
+        .map(|key| match key {
+          tonic::metadata::KeyRef::Ascii(v) => v.as_str(),
+          tonic::metadata::KeyRef::Binary(v) => v.as_str(),
+        })
+        .collect::<Vec<_>>()
+  }
+}
