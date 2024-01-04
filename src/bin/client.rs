@@ -105,7 +105,8 @@ enum Commands {
     },
 }
 
-#[autometrics]
+// #[autometrics]
+#[tracing::instrument]
 async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
@@ -145,12 +146,12 @@ async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::GetHubs{print}) => {
             if *print {
                 println!("retrieving hubs");
-                get_hubs(&mut discovery_client).await;
+                get_hubs(&mut discovery_client, &cx).await;
             }
         }
         Some(Commands::GetServers) => {
             println!("retrieving servers");
-            get_servers(&mut discovery_client).await;
+            get_servers(&mut discovery_client, &cx).await;
         }
         Some(Commands::RegisterServer { id, name, version, host, port, repositories }   ) => {
             println!("registering server: {}", *id);
@@ -173,6 +174,8 @@ async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
         }
         None => {}
     }
+    cx.span().add_event("CLI end".to_string(), vec![]);
+    cx.span().end();
 
     opentelemetry::global::shutdown_tracer_provider();
     Ok(())
@@ -317,12 +320,16 @@ async fn register_hub(discovery_client: &mut DiscoveryClient<tonic::transport::C
     println!("RESPONSE={:?}", something.unwrap());
 }
 
-async fn get_hubs(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>) {
-    let request = tonic::Request::new(GetHubsRequest {
+async fn get_hubs(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>, cx: &Context) {
+    let mut request = tonic::Request::new(GetHubsRequest {
         client_id: "test".to_string(),
         name: "test".to_string(),
         host: "test".to_string(),
         port: "0".to_string(),
+    });
+
+    global::get_text_map_propagator(|propagator| {
+        propagator.inject_context(&cx, &mut MetadataMap(request.metadata_mut()))
     });
 
     let response = discovery_client.get_hubs(request);
@@ -347,12 +354,16 @@ async fn get_hubs(discovery_client: &mut DiscoveryClient<tonic::transport::Chann
 /// # Remarks
 /// This function is used by the Gitstafette Relay to retrieve the Gitstafette Servers
 /// from the Discovery Server
-async fn get_servers(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>) -> Vec<GitstafetteServer> {
-    let request = tonic::Request::new(GetServersRequest {
+async fn get_servers(discovery_client: &mut DiscoveryClient<tonic::transport::Channel>, cx: &Context) -> Vec<GitstafetteServer> {
+    let mut request = tonic::Request::new(GetServersRequest {
         client_id: "test".to_string(),
         name: "test".to_string(),
         host: "test".to_string(),
         port: "0".to_string(),
+    });
+
+    global::get_text_map_propagator(|propagator| {
+        propagator.inject_context(&cx, &mut MetadataMap(request.metadata_mut()))
     });
 
     let response = discovery_client.get_servers(request);
