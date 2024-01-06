@@ -24,7 +24,16 @@ fn resource(service_name_suffix: String) -> Resource {
 }
 
 fn init_tracer(service_name_suffix: String) -> Tracer {
-    let trace_exporter = opentelemetry_otlp::new_exporter().tonic().with_endpoint("http://localhost:4317");
+    // retrieve OTLP endpoint from environment variable
+    // let's re-use the default: OTEL_EXPORTER_OTLP_ENDPOINT
+    // https://opentelemetry.io/docs/concepts/sdk-configuration/otlp-exporter-configuration/#otel_exporter_otlp_endpoint
+
+    let mut endpoint = "http://localhost:4317".to_string();
+    if let Ok(otlp_endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        endpoint = otlp_endpoint;
+    }
+
+    let trace_exporter = opentelemetry_otlp::new_exporter().tonic().with_endpoint(endpoint);
 
     opentelemetry_otlp::new_pipeline()
         .tracing()

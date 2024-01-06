@@ -1,4 +1,4 @@
-run:
+server:
 	@echo "Running local"
 	cargo run --bin server -- --listener-address 127.0.0.1
 

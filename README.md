@@ -5,8 +5,6 @@ Service discovery service for Gitstafette
 ## TODO
 
 * implement OTEL tracing
-  * add tracing to client
-  * do we get a proper distributed trace?
   * configure it via environment variables
 * update container images
   * server
