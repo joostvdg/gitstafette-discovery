@@ -4,17 +4,17 @@ Service discovery service for Gitstafette
 
 ## TODO
 
-* implement OTEL tracing
-  * configure it via environment variables
 * update container images
   * server
   * client (for Sidecar)
+* Graceful shutdown in Docker
 * create Helm package
   * for Discovery server
-* support TLS with custom CA
+  * do we need a sidecar for itself?
 * add as a sidecar to 
   * Gitstafette server
   * Gitstafette relay
+  * support TLS with custom CA
 * support authentication
   * OAUTH token with GRPC?
 

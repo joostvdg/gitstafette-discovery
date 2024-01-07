@@ -11,15 +11,15 @@ RUN rustup component add rustfmt
 ARG TARGETPLATFORM
 RUN \
 if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
-    apt-get install -y g++-x86-64-linux-gnu libc6-dev-amd64-cross libc6-dev; \
+    apt-get install -y g++-x86-64-linux-gnu libc6-dev-amd64-cross ; \
     rustup target add x86_64-unknown-linux-gnu ; \
     rustup toolchain install stable-x86_64-unknown-linux-gnu ; \
 elif [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
-    apt-get install -y g++-aarch64-linux-gnu libc6-dev-arm64-cross libc6-dev; \
+    apt-get install -y g++-aarch64-linux-gnu libc6-dev-arm64-cross ; \
     rustup target add aarch64-unknown-linux-gnu ; \
     rustup toolchain install stable-aarch64-unknown-linux-gnu ; \
 elif [ "$TARGETPLATFORM" = "linux/arm/v7" ]; then \
-    apt-get install -y g++-arm-linux-gnueabihf libc6-dev-armhf-cross libc6-dev; \
+    apt-get install -y g++-arm-linux-gnueabihf libc6-dev-armhf-cross ; \
     rustup target add armv7-unknown-linux-gnueabihf ; \
     rustup toolchain install stable-armv7-unknown-linux-gnueabihf ; \
 fi
@@ -77,7 +77,7 @@ elif [ "$TARGETPLATFORM" = "linux/arm/v7" ]; then \
     export CC_armv7_unknown_Linux_gnueabihf=arm-linux-gnueabihf-gcc ; \
     export CXX_armv7_unknown_linux_gnueabihf=arm-linux-gnueabihf-g++ ; \
 fi \
-&& RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin server --target $TARGET && mv /app/target/$TARGET/release /build/release
+&& cargo build --release --bin server --target $TARGET && mv /app/target/$TARGET/release /build/release
 
 
 #FROM bitnami/minideb:latest

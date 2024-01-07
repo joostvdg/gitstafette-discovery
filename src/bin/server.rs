@@ -5,7 +5,7 @@ use autometrics::{autometrics, prometheus_exporter};
 use axum::{routing::get, Router};
 use clap::{Parser};
 
-use opentelemetry::{Context, global, propagation::Extractor, trace::{Span, SpanKind, Tracer}};
+use opentelemetry::{Context, global, propagation::Extractor, trace::{Span, Tracer}};
 use opentelemetry::trace::TraceContextExt;
 
 use gitstafette_discovery::{GetHubsRequest, GetHubsResponse,RegisterHubRequest,RegisterHubResponse, RegisterServerRequest, RegisterServerResponse, GetServersRequest, GetServersResponse, GitstafetteHub, GitstafetteServer, RegisterResponse,
@@ -42,6 +42,9 @@ struct Cli {
     #[arg(short, long, default_value = "50051")]
     port: String,
 
+  /// Gitstatfette Discovery Webserver Port
+  #[arg(short, long, default_value = "8080")]
+  web_port: String,
 }
 
 #[tokio::main]
@@ -53,6 +56,7 @@ pub async fn main() {
 
   let cli = Cli::parse();
   let address = format!("{}:{}", cli.listener_address, cli.port);
+  let web_address = format!("{}:{}", cli.listener_address, cli.web_port);
   let discovery_service = DiscoveryServer::new(DiscoveryService{store: InMemoryStore::new()});
   let info_service = InfoServer::new(InfoService{});
   let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
@@ -72,7 +76,8 @@ pub async fn main() {
   });
 
   // Web server with Axum
-  let web_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+  let web_addr: SocketAddr =web_address.parse().unwrap();
+  println!("Metrics server listening on {}", web_addr);
   let app = Router::new()
       .route("/", get(handler))
       .route(
