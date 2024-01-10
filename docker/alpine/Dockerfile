@@ -7,7 +7,7 @@ FROM base as build-amd64
 WORKDIR /usr/src/gitstafette-discovery
 ENV TARGET=x86_64-unknown-linux-musl
 RUN rustup target add x86_64-unknown-linux-musl
-RUN apt update && apt install -y g++-mingw-w64-x86-64 protobuf-compiler
+RUN apt update && apt install -y g++-mingw-w64-x86-64 protobuf-compiler musl-tools
 RUN rustup target add x86_64-pc-windows-gnu
 RUN rustup toolchain install stable-x86_64-pc-windows-gnu
 
@@ -16,14 +16,14 @@ COPY ./src ./src
 COPY build.rs build.rs
 COPY protos protos
 RUN mkdir -p /build
-RUN cargo build --release --bin server --target=$TARGET && mv /usr/src/gitstafette-discovery/target/$TARGET/release /build/release
+RUN RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin server --target=$TARGET && mv /usr/src/gitstafette-discovery/target/$TARGET/release /build/release
 
 # arm64-specific stage
 FROM base as build-arm64
 ARG APP_NAME="app"
 ARG TARGET="aarch64-unknown-linux-musl"
 RUN apt-get update
-RUN apt-get install clang llvm protobuf-compiler -y
+RUN apt-get install clang llvm protobuf-compiler musl-tools -y
 RUN rustup target add $TARGET
 RUN mkdir /usr/src/$APP_NAME
 WORKDIR /usr/src/$APP_NAME
@@ -41,7 +41,7 @@ COPY build.rs build.rs
 COPY protos protos
 
 RUN mkdir -p /build
-RUN cargo build --release --bin server --target=$TARGET && mv /usr/src/$APP_NAME/target/$TARGET/release /build/release
+RUN RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin server --target=$TARGET && mv /usr/src/$APP_NAME/target/$TARGET/release /build/release
 
 
 # common steps
