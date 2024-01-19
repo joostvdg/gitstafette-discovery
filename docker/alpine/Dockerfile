@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
-
 FROM rust AS base
 
 # amd64-specific stage
+ARG BIN_NAME="server"
 FROM base as build-amd64
 WORKDIR /usr/src/gitstafette-discovery
 ENV TARGET=x86_64-unknown-linux-musl
@@ -16,9 +16,10 @@ COPY ./src ./src
 COPY build.rs build.rs
 COPY protos protos
 RUN mkdir -p /build
-RUN RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin server --target=$TARGET && mv /usr/src/gitstafette-discovery/target/$TARGET/release /build/release
+RUN RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin ${BIN_NAME} --target=$TARGET && mv /usr/src/gitstafette-discovery/target/$TARGET/release /build/release
 
 # arm64-specific stage
+ARG BIN_NAME="server"
 FROM base as build-arm64
 ARG APP_NAME="app"
 ARG TARGET="aarch64-unknown-linux-musl"
@@ -41,7 +42,7 @@ COPY build.rs build.rs
 COPY protos protos
 
 RUN mkdir -p /build
-RUN RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin server --target=$TARGET && mv /usr/src/$APP_NAME/target/$TARGET/release /build/release
+RUN RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin ${BIN_NAME} --target=$TARGET && mv /usr/src/$APP_NAME/target/$TARGET/release /build/release
 
 
 # common steps
@@ -50,7 +51,8 @@ RUN echo "This stage is used on all architectures"
 RUN ls -lath /build/release
 
 # common steps
-FROM alpine:3.18
+FROM alpine:3.19
+ARG BIN_NAME="server"
 LABEL org.opencontainers.image.source = "https://github.com/joostvdg/gitstafette-discovery"
 LABEL org.opencontainers.image.description ="gitstafette-discovery is a tool to help you with the next version number of your project. It is based on the git history and the tags you have created. It is a simple tool that can be used in your CI/CD pipeline to determine the next version number of your project."
 LABEL org.opencontainers.image.authors ="Joost van der Griendt <joostvdg@gmail.com>"
@@ -60,11 +62,10 @@ ENV RUST_BACKTRACE=1
 
 RUN addgroup -S appgroup && adduser -D -u 1000 gitstafette -G appgroup -h /work
 
-COPY --from=build --chown=gitstafette:appgroup /build/release/server .
+COPY --from=build --chown=gitstafette:appgroup /build/release/${BIN_NAME} /work/discovery
 
 USER gitstafette
 RUN ls -lath /work
-RUN ls -lath /work/server
 
-ENTRYPOINT ["./server"]
+ENTRYPOINT ["./discovery"]
 CMD ["-l", "0.0.0.0", "-p", "50051"]

@@ -6,6 +6,10 @@ client:
 	@echo "Running client"
 	cargo run --bin client -- --hostname 127.0.0.1 info-registration-loop --info-host 127.0.0.1 --info-port 50051 --info-protocol http
 
+client-gsf-server:
+	@echo "Running client gsf-server on port 50052"
+	cargo run --bin client -- --hostname 127.0.0.1 info-registration-loop --info-host 127.0.0.1 --info-port 50052 --info-protocol http
+
 get-servers-local:
 	@echo "Getting servers from local"
 	cargo run --bin client -- --hostname 127.0.0.1 get-servers
@@ -30,6 +34,28 @@ dpush-alpine:
 		--tag ghcr.io/joostvdg/gitstafette-discovery:$(VERSION)-alpine \
 		--build-arg BUILDKIT_INLINE_BUILDINFO_ATTRS=1 \
 		--provenance=false --sbom=false --push
+
+.PHONY: dpush-client-alpine
+dpush-client-alpine:
+	docker buildx build . \
+		-f docker/alpine/Dockerfile \
+		--platform linux/amd64,linux/arm64 \
+		--tag ghcr.io/joostvdg/gitstafette-discovery:$(VERSION)-client-alpine \
+		--build-arg BUILDKIT_INLINE_BUILDINFO_ATTRS=1 \
+		--build-arg BIN_NAME=client \
+		--provenance=false --sbom=false --push
+
+.PHONY: dpush-client-alpine-amd
+dpush-client-alpine-amd:
+	docker buildx build . \
+		-f docker/alpine/Dockerfile \
+		--platform linux/amd64 \
+		--tag ghcr.io/joostvdg/gitstafette-discovery:$(VERSION)-client-alpine-amd64 \
+		--provenance=false \
+		--sbom=false \
+		--build-arg BUILDKIT_INLINE_BUILDINFO_ATTRS=1 \
+		--build-arg BIN_NAME=client \
+		--push
 
 .PHONY: dpush-alpine-amd
 dpush-alpine-amd:
