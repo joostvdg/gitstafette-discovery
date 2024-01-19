@@ -1,5 +1,9 @@
 use std::error::Error;
+use std::future;
+use std::net::SocketAddr;
 use autometrics::{autometrics, prometheus_exporter};
+use axum::Router;
+use axum::routing::get;
 use clap::{Parser, Subcommand};
 use opentelemetry::{global, propagation::Injector};
 use opentelemetry::{
@@ -170,7 +174,13 @@ async fn parse_cli() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(Commands::InfoRegistrationLoop { info_host, info_port, info_protocol }) => {
             println!("Starting info registration loop");
-            sync_local_status_to_discovery_server(&mut discovery_client, info_host, info_port, info_protocol).await?;
+            // for kubernetes health checks
+            // TODO: make webserver configurable
+
+            let t1  = start_webserver();
+            let t2 =    sync_local_status_to_discovery_server(&mut discovery_client, info_host, info_port, info_protocol);
+            let (r1, r2) = tokio::join!(t1, t2);
+            println!("Webserver and info registration loop finished: {:?}, {:?}", r1, r2);
         }
         None => {}
     }
@@ -196,8 +206,36 @@ impl<'a> Injector for MetadataMap<'a> {
 
 #[autometrics]
 #[tracing::instrument]
+async fn handler() -> &'static str {
+    "Hello, World!"
+}
+
+async fn start_webserver() {
+    // TODO: make port configurable
+    // Web server with Axum
+    let web_address = "0.0.0.0:8082".to_string();
+    let web_addr: SocketAddr =web_address.parse().unwrap();
+    println!("Metrics server listening on {}", web_addr);
+    let app = Router::new()
+        .route("/", get(handler))
+        .route(
+            "/metrics",
+            get(|| async { prometheus_exporter::encode_http_response() }),
+        );
+
+    // Start the server
+    println!("Starting web server at {}", web_addr);
+    axum::Server::bind(&web_addr)
+        .serve(app.into_make_service())
+        .await
+        .expect("Web server failed");
+}
+
+#[autometrics]
+#[tracing::instrument]
 async fn sync_local_status_to_discovery_server(mut discovery_client: &mut DiscoveryClient<Channel>, info_host: &String, info_port: &String, info_protocol: &String) -> Result<(), Box<dyn Error>> {
     let server = format!("{}://{}:{}", info_protocol, info_host, info_port);
+    println!("info client connected to: {}", server);
     let mut info_client: InfoClient<tonic::transport::Channel> = InfoClient::connect(server).await?;
 
     loop {
@@ -215,12 +253,14 @@ async fn sync_local_status_to_discovery_server(mut discovery_client: &mut Discov
         let result = response.await;
         if result.is_err() {
             let status_code = result.unwrap_err().code();
+            println!("ERROR={:?}", status_code);
             cx.span().add_event(
                 "Got response!".to_string(),
                 vec![KeyValue::new("status", status_code.to_string())],
             );
             continue;
         } else {
+            println!("Got successful response!");
             cx.span().add_event(
                 "Got response!".to_string(),
                 vec![KeyValue::new("status", "OK".to_string())],
