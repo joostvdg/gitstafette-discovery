@@ -51,7 +51,7 @@ RUN echo "This stage is used on all architectures"
 RUN ls -lath /build/release
 
 # common steps
-FROM alpine:3.19
+FROM alpine:3.21.0
 ARG BIN_NAME="server"
 LABEL org.opencontainers.image.source = "https://github.com/joostvdg/gitstafette-discovery"
 LABEL org.opencontainers.image.description ="gitstafette-discovery is a tool to help you with the next version number of your project. It is based on the git history and the tags you have created. It is a simple tool that can be used in your CI/CD pipeline to determine the next version number of your project."
